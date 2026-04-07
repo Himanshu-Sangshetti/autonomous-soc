@@ -1,0 +1,39 @@
+name: "Layer 1: Runtime Monitoring Only"
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'Scenario'
+        required: false
+        default: 'clean'
+        type: choice
+        options: [clean, malicious-dep, leaked-secret, vuln-dep]
+
+permissions:
+  contents: read
+
+jobs:
+  layer1:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Apply scenario
+        if: github.event.inputs.scenario != 'clean'
+        run: cp "demo/scenarios/${{ github.event.inputs.scenario }}/package.json" demo/app/package.json 2>/dev/null || true
+
+      - name: Install (safe)
+        working-directory: demo/app
+        run: npm install --ignore-scripts
+
+
+
+
+

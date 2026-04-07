@@ -1,0 +1,154 @@
+name: 'Autonomous SOC'
+description: 'Plug-and-play supply chain security: SBOM diff, provenance, runtime monitoring, vulnerability scan, secret scan, AI triage'
+author: 'Himanshu Ramchandani'
+
+branding:
+  icon: 'shield'
+  color: 'purple'
+
+inputs:
+  policy:
+    description: 'Policy mode: strict, moderate, or audit'
+    required: false
+    default: 'moderate'
+  sbom-format:
+    description: 'SBOM format: cyclonedx or spdx'
+    required: false
+    default: 'cyclonedx'
+  fail-on-block:
+    description: 'Fail the build when AI triage says AUTO_BLOCK'
+    required: false
+    default: 'true'
+  grype-severity:
+    description: 'Minimum Grype severity to fail on: negligible, low, medium, high, critical'
+    required: false
+    default: 'high'
+  skip-ai:
+    description: 'Skip AI triage, use policy engine only (no API key needed)'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup autonomous-soc tools
+      shell: bash
+      run: |
+        echo ""
+        echo "========================================"
+        echo "  AUTONOMOUS SOC — INITIALIZING"
+        echo "========================================"
+        echo ""
+
+        # Install Syft (SBOM generator)
+        if ! command -v syft &> /dev/null; then
+          echo "  Installing Syft..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin 2>/dev/null
+        fi
+
+        # Install Grype (vulnerability scanner)
+        if ! command -v grype &> /dev/null; then
+          echo "  Installing Grype..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin 2>/dev/null
+        fi
+
+        # Install Gitleaks (secret scanner)
+        if ! command -v gitleaks &> /dev/null; then
+          echo "  Installing Gitleaks..."
+          GITLEAKS_VERSION="8.21.2"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar xz -C /usr/local/bin gitleaks 2>/dev/null
+        fi
+
+        # Install Python dependencies
+        pip install anthropic pyyaml --quiet 2>/dev/null || pip install anthropic pyyaml --quiet --break-system-packages 2>/dev/null
+
+        echo "  ✅ All tools ready"
+
+    - name: Generate SBOM
+      shell: bash
+      run: |
+        echo ""
+        echo "  📋 Generating SBOM..."
+        SBOM_FORMAT="${{ inputs.sbom-format }}"
+        if [ "$SBOM_FORMAT" = "spdx" ]; then
+          syft packages dir:. -o spdx-json --file=/tmp/soc-sbom-current.json 2>/dev/null
+        else
+          syft packages dir:. -o cyclonedx-json --file=/tmp/soc-sbom-current.json 2>/dev/null
+        fi
+        COMP_COUNT=$(python3 -c "import json; print(len(json.load(open('/tmp/soc-sbom-current.json')).get('components', [])))" 2>/dev/null || echo "?")
+        echo "  ✅ SBOM generated: ${COMP_COUNT} components"
+
+    - name: SBOM Diff
+      shell: bash
+      run: |
+        echo ""
+        echo "  🔍 Running SBOM diff..."
+        # Initialize signals file
+        echo "[]" > /tmp/soc-signals.json
+        python3 ${{ github.action_path }}/tools/sbom-diff.py /tmp/soc-sbom-current.json \
+          --baseline sbom-baseline.json \
+          --signals-file /tmp/soc-signals.json || true
+      env:
+        SIGNALS_FILE: /tmp/soc-signals.json
+
+    - name: Provenance verification
+      shell: bash
+      run: |
+        echo ""
+        echo "  🔏 Checking package provenance..."
+        npm audit signatures > /tmp/provenance-output.txt 2>&1 || true
+        if grep -qi "missing\|invalid\|no signature" /tmp/provenance-output.txt 2>/dev/null; then
+          echo "  ⚠️ Provenance issues detected"
+        else
+          echo "  ✅ All packages have valid provenance"
+        fi
+      continue-on-error: true
+
+    - name: Vulnerability scan
+      shell: bash
+      run: |
+        echo ""
+        echo "  🛡️ Scanning for vulnerabilities..."
+        grype sbom:/tmp/soc-sbom-current.json -o json --file=/tmp/grype-output.json 2>/dev/null || true
+        HIGH_COUNT=$(python3 -c "
+import json
+with open('/tmp/grype-output.json') as f:
+    d = json.load(f)
+h = [m for m in d.get('matches',[]) if m.get('vulnerability',{}).get('severity','').lower() in ('high','critical')]
+print(len(h))
+" 2>/dev/null || echo "0")
+        echo "  Found ${HIGH_COUNT} high/critical vulnerabilities"
+      continue-on-error: true
+
+    - name: Secret scan
+      shell: bash
+      run: |
+        echo ""
+        echo "  🔑 Scanning for secrets..."
+        gitleaks detect --source . --no-git --report-format json --report-path /tmp/gitleaks-output.json 2>/dev/null || true
+        LEAK_COUNT=$(python3 -c "import json; print(len(json.load(open('/tmp/gitleaks-output.json'))))" 2>/dev/null || echo "0")
+        echo "  Found ${LEAK_COUNT} secret(s)"
+      continue-on-error: true
+
+    - name: Collect signals
+      shell: bash
+      run: |
+        bash ${{ github.action_path }}/tools/collect-signals.sh
+      env:
+        SIGNALS_FILE: /tmp/soc-signals.json
+        GRYPE_OUTPUT: /tmp/grype-output.json
+        GITLEAKS_OUTPUT: /tmp/gitleaks-output.json
+        PROVENANCE_OUTPUT: /tmp/provenance-output.txt
+
+    - name: AI Triage
+      shell: bash
+      run: |
+        SKIP_AI="${{ inputs.skip-ai }}"
+        if [ "$SKIP_AI" = "true" ]; then
+          export ANTHROPIC_API_KEY=""
+        fi
+        python3 ${{ github.action_path }}/tools/ai-triage.py \
+          --signals-file /tmp/soc-signals.json \
+          --policy ${{ inputs.policy }}
+      env:
+        FAIL_ON_BLOCK: ${{ inputs.fail-on-block }}

@@ -1,0 +1,16 @@
+# Internal reference only — not for public repo / end users
+docs/
+CLAUDE.md
+
+node_modules/
+/tmp/
+*.log
+.env
+.env.local
+/demo/app/node_modules/
+/demo/app/package-lock.json
+sbom-baseline.json
+/tmp/soc-*.json
+__pycache__/
+*.pyc
+.DS_Store

@@ -1,0 +1,12 @@
+{
+  "name": "autonomous-soc-demo-app",
+  "version": "1.0.0",
+  "description": "ATTACK SCENARIO: unexpected dependency injection (simulates Axios March 2026)",
+  "main": "index.js",
+  "scripts": { "start": "node index.js", "test": "echo \"Tests passed\" && exit 0" },
+  "dependencies": {
+    "express": "^4.21.0",
+    "axios": "1.7.7",
+    "plain-crypto-js": "^4.2.0"
+  }
+}

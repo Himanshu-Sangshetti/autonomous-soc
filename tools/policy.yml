@@ -1,0 +1,25 @@
+default_policy: moderate
+
+thresholds:
+  strict:
+    auto_block_on_high_count: 2
+    alert_on_high_count: 1
+    auto_block_on_critical: true
+  moderate:
+    auto_block_on_high_count: 3
+    alert_on_high_count: 2
+    auto_block_on_critical: true
+  audit:
+    auto_block_on_high_count: 999
+    alert_on_high_count: 999
+    auto_block_on_critical: false
+
+blocklist:
+  - plain-crypto-js
+  - plain-crypto
+
+suspicious_file_patterns:
+  - "*.pth"
+  - "*.map"
+  - "*.exe"
+  - "*.dll"
