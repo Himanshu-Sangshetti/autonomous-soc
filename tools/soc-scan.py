@@ -76,7 +76,9 @@ def main():
 
     # AI Triage
     triage_env = {"SIGNALS_FILE": SIG}
-    if a.skip_ai: triage_env["ANTHROPIC_API_KEY"] = ""
+    if a.skip_ai:
+        triage_env["ANTHROPIC_API_KEY"] = ""
+        triage_env["GROQ_API_KEY"] = ""
     r = run([sys.executable, str(TOOLS/"ai-triage.py"), "--signals-file", SIG, "--policy", a.policy],
             "AI triage...", triage_env)
     if r.stdout: print(r.stdout)

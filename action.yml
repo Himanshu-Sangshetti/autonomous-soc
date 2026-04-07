@@ -60,7 +60,7 @@ runs:
         fi
 
         # Install Python dependencies
-        pip install anthropic pyyaml --quiet 2>/dev/null || pip install anthropic pyyaml --quiet --break-system-packages 2>/dev/null
+        pip install anthropic openai pyyaml --quiet 2>/dev/null || pip install anthropic openai pyyaml --quiet --break-system-packages 2>/dev/null
 
         echo "  ✅ All tools ready"
 
@@ -146,6 +146,7 @@ print(len(h))
         SKIP_AI="${{ inputs.skip-ai }}"
         if [ "$SKIP_AI" = "true" ]; then
           export ANTHROPIC_API_KEY=""
+          export GROQ_API_KEY=""
         fi
         python3 ${{ github.action_path }}/tools/ai-triage.py \
           --signals-file /tmp/soc-signals.json \

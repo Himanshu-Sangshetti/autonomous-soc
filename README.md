@@ -81,6 +81,18 @@ Gitleaks                                Human-loop       Alert team
 
 All signals feed into `tools/ai-triage.py` which correlates them and outputs a verdict.
 
+## AI provider (optional)
+
+LLM triage uses **Anthropic** if `ANTHROPIC_API_KEY` is set; otherwise **Groq** if `GROQ_API_KEY` is set ([Groq console](https://console.groq.com) — free tier for development). If neither is set, the **policy engine** runs (no API cost).
+
+Override order with `SOC_AI_PROVIDER`: `auto` (default), `anthropic`, or `groq`. Optional: `GROQ_MODEL` (default `llama-3.1-8b-instant`), `ANTHROPIC_MODEL`.
+
+```yaml
+env:
+  GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+  # SOC_AI_PROVIDER: groq   # optional if you also set ANTHROPIC_API_KEY
+```
+
 ## Policy Modes
 
 | Mode | Auto-block | Alert | Use Case |

@@ -40,6 +40,10 @@ Rules:
 Known patterns: unexpected dep + missing provenance = account takeover (Axios 2026),
 new .pth file = interpreter persistence (LiteLLM), anomalous egress = C2 (TeamPCP)."""
 
+# Groq: free-tier dev keys — https://console.groq.com (OpenAI-compatible API)
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
+
 
 def load_signals(path):
     if not os.path.exists(path):
@@ -89,39 +93,108 @@ def policy_decision(signals, policy):
     }
 
 
+def _parse_llm_json(text: str) -> dict:
+    text = text.strip()
+    if "```" in text:
+        lines = [l for l in text.split("\n") if not l.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+    return json.loads(text)
+
+
+def _apply_strict_policy(result: dict, signals: list, policy: str) -> dict:
+    if policy == "strict":
+        hc = sum(1 for s in signals if s.get("severity") in ("HIGH", "CRITICAL"))
+        if result.get("decision") == "ALLOW" and hc > 0:
+            result["decision"] = "ALERT_HUMAN"
+            result["correlation"] = (result.get("correlation") or "") + (
+                " (Overridden: strict policy, HIGH signals present.)"
+            )
+    return result
+
+
+def _triage_anthropic(signals: list, policy: str, api_key: str) -> dict:
+    from anthropic import Anthropic
+
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+    client = Anthropic(api_key=api_key)
+    prompt = TRIAGE_PROMPT.format(signals=json.dumps(signals, indent=2))
+    resp = client.messages.create(
+        model=model,
+        max_tokens=1500,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = resp.content[0].text.strip()
+    result = _parse_llm_json(text)
+    result["engine"] = "ai"
+    result["llm"] = "anthropic"
+    return _apply_strict_policy(result, signals, policy)
+
+
+def _triage_groq(signals: list, policy: str, api_key: str) -> dict:
+    from openai import OpenAI
+
+    model = os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL)
+    client = OpenAI(api_key=api_key, base_url=GROQ_BASE_URL)
+    prompt = TRIAGE_PROMPT.format(signals=json.dumps(signals, indent=2))
+    resp = client.chat.completions.create(
+        model=model,
+        max_tokens=1500,
+        temperature=0.1,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = resp.choices[0].message.content.strip()
+    result = _parse_llm_json(text)
+    result["engine"] = "ai"
+    result["llm"] = "groq"
+    return _apply_strict_policy(result, signals, policy)
+
+
 def ai_triage(signals, policy):
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        print("[AI-TRIAGE] No ANTHROPIC_API_KEY. Using policy engine.")
+    """Use Anthropic, Groq (free-tier friendly), or policy fallback.
+
+    SOC_AI_PROVIDER: auto | anthropic | groq
+      auto — ANTHROPIC_API_KEY if set, else GROQ_API_KEY, else policy engine.
+    """
+    anthropic_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+    groq_key = (os.environ.get("GROQ_API_KEY") or "").strip()
+    provider = (os.environ.get("SOC_AI_PROVIDER") or "auto").strip().lower()
+
+    use_anthropic = provider == "anthropic" or (provider == "auto" and anthropic_key)
+    use_groq = provider == "groq" or (provider == "auto" and not anthropic_key and groq_key)
+
+    if provider == "anthropic" and not anthropic_key:
+        print("[AI-TRIAGE] SOC_AI_PROVIDER=anthropic but ANTHROPIC_API_KEY is empty. Using policy engine.")
         return policy_decision(signals, policy)
-    try:
-        from anthropic import Anthropic
-        client = Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model="claude-sonnet-4-20250514", max_tokens=1500,
-            messages=[{"role": "user", "content": TRIAGE_PROMPT.format(signals=json.dumps(signals, indent=2))}],
-        )
-        text = resp.content[0].text.strip()
-        if "```" in text:
-            lines = [l for l in text.split("\n") if not l.strip().startswith("```")]
-            text = "\n".join(lines).strip()
-        result = json.loads(text)
-        result["engine"] = "ai"
-        if policy == "strict":
-            hc = sum(1 for s in signals if s.get("severity") in ("HIGH", "CRITICAL"))
-            if result["decision"] == "ALLOW" and hc > 0:
-                result["decision"] = "ALERT_HUMAN"
-                result["correlation"] += " (Overridden: strict policy, HIGH signals present.)"
-        return result
-    except Exception as e:
-        print(f"[AI-TRIAGE] AI error: {e}. Using policy engine.")
+    if provider == "groq" and not groq_key:
+        print("[AI-TRIAGE] SOC_AI_PROVIDER=groq but GROQ_API_KEY is empty. Using policy engine.")
         return policy_decision(signals, policy)
+
+    if use_anthropic and anthropic_key:
+        try:
+            return _triage_anthropic(signals, policy, anthropic_key)
+        except Exception as e:
+            print(f"[AI-TRIAGE] Anthropic error: {e}. Using policy engine.")
+            return policy_decision(signals, policy)
+
+    if use_groq and groq_key:
+        try:
+            return _triage_groq(signals, policy, groq_key)
+        except Exception as e:
+            print(f"[AI-TRIAGE] Groq error: {e}. Using policy engine.")
+            return policy_decision(signals, policy)
+
+    print("[AI-TRIAGE] No ANTHROPIC_API_KEY or GROQ_API_KEY. Using policy engine.")
+    return policy_decision(signals, policy)
 
 
 def print_verdict(result, signals):
     d = result.get("decision", "?")
     icons = {"AUTO_BLOCK": "\U0001f6d1", "ALERT_HUMAN": "\u26a0\ufe0f", "ALLOW": "\u2705"}
-    eng = "AI (Claude)" if result.get("engine") == "ai" else "Policy Engine"
+    if result.get("engine") == "ai":
+        label = {"anthropic": "Claude", "groq": "Groq"}.get(result.get("llm"), "LLM")
+        eng = f"AI ({label})"
+    else:
+        eng = "Policy Engine"
 
     print(f"\n{'='*60}")
     print(f"  AUTONOMOUS SOC — TRIAGE VERDICT")
