@@ -111,12 +111,12 @@ runs:
         echo "  🛡️ Scanning for vulnerabilities..."
         grype sbom:/tmp/soc-sbom-current.json -o json --file=/tmp/grype-output.json 2>/dev/null || true
         HIGH_COUNT=$(python3 -c "
-import json
-with open('/tmp/grype-output.json') as f:
-    d = json.load(f)
-h = [m for m in d.get('matches',[]) if m.get('vulnerability',{}).get('severity','').lower() in ('high','critical')]
-print(len(h))
-" 2>/dev/null || echo "0")
+        import json
+        with open('/tmp/grype-output.json') as f:
+            d = json.load(f)
+        h = [m for m in d.get('matches',[]) if m.get('vulnerability',{}).get('severity','').lower() in ('high','critical')]
+        print(len(h))
+        " 2>/dev/null || echo "0")
         echo "  Found ${HIGH_COUNT} high/critical vulnerabilities"
       continue-on-error: true
 
