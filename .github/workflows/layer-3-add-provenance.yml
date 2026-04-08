@@ -1,4 +1,4 @@
-name: "Layer 1: Runtime Monitoring Only"
+name: "Layer 3: + Provenance Verification"
 on:
   workflow_dispatch:
     inputs:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  layer1:
+  layer3:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
@@ -33,7 +33,17 @@ jobs:
         working-directory: demo/app
         run: npm install --ignore-scripts
 
+      - name: Generate SBOM
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin 2>/dev/null
+          syft packages dir:demo/app -o cyclonedx-json --file=/tmp/soc-sbom-current.json
 
+      - name: SBOM Diff
+        run: |
+          echo "[]" > /tmp/soc-signals.json
+          python3 tools/sbom-diff.py /tmp/soc-sbom-current.json --signals-file /tmp/soc-signals.json || true
 
-
-
+      - name: Provenance Check
+        run: |
+          cd demo/app && npm audit signatures > /tmp/provenance-output.txt 2>&1 || true
+          cat /tmp/provenance-output.txt

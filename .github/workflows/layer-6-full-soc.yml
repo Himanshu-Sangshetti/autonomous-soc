@@ -1,4 +1,4 @@
-name: "Layer 4: + Vulnerability Scanning"
+name: "Layer 6: + AI Triage (Full SOC)"
 on:
   workflow_dispatch:
     inputs:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  layer4:
+  layer6:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
@@ -54,4 +54,24 @@ jobs:
           grype sbom:/tmp/soc-sbom-current.json -o json --file=/tmp/grype-output.json || true
           grype sbom:/tmp/soc-sbom-current.json --fail-on high || true
 
+      - name: Secret Scan
+        run: |
+          GITLEAKS_VERSION="8.21.2"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar xz -C /usr/local/bin gitleaks 2>/dev/null
+          gitleaks detect --source demo/app --no-git --report-format json --report-path /tmp/gitleaks-output.json || true
 
+      - name: Collect Signals
+        run: bash tools/collect-signals.sh
+        env:
+          SIGNALS_FILE: /tmp/soc-signals.json
+          GRYPE_OUTPUT: /tmp/grype-output.json
+          GITLEAKS_OUTPUT: /tmp/gitleaks-output.json
+          PROVENANCE_OUTPUT: /tmp/provenance-output.txt
+
+      - name: AI Triage
+        run: |
+          pip install anthropic openai pyyaml --quiet --break-system-packages 2>/dev/null || pip install anthropic openai pyyaml --quiet
+          python3 tools/ai-triage.py --signals-file /tmp/soc-signals.json --policy moderate
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}

@@ -1,4 +1,4 @@
-name: "Layer 2: + SBOM Generation and Diff"
+name: "Layer 1: Runtime Monitoring Only"
 on:
   workflow_dispatch:
     inputs:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  layer2:
+  layer1:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
@@ -32,17 +32,3 @@ jobs:
       - name: Install (safe)
         working-directory: demo/app
         run: npm install --ignore-scripts
-
-      - name: Generate SBOM
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin 2>/dev/null
-          syft packages dir:demo/app -o cyclonedx-json --file=/tmp/soc-sbom-current.json
-
-      - name: SBOM Diff
-        run: |
-          echo "[]" > /tmp/soc-signals.json
-          python3 tools/sbom-diff.py /tmp/soc-sbom-current.json --signals-file /tmp/soc-signals.json || true
-
-
-
-
