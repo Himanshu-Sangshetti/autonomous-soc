@@ -85,8 +85,7 @@ def main():
     signals = []
 
     if added:
-        print(f'
-[SBOM-DIFF] NEW DEPENDENCIES ({len(added)}):')
+        print(f'\n[SBOM-DIFF] NEW DEPENDENCIES ({len(added)}):')
         for name, info in added.items():
             known = KNOWN_MALICIOUS.get(name, '')
             flag = f' <- KNOWN MALICIOUS: {known}' if known else ''
@@ -98,8 +97,7 @@ def main():
                           {'version': info['version']}))
 
     if changed:
-        print(f'
-[SBOM-DIFF] VERSION CHANGES ({len(changed)}):')
+        print(f'\n[SBOM-DIFF] VERSION CHANGES ({len(changed)}):')
         for name, info in changed.items():
             print(f'  ~ {name}: {info["from"]} -> {info["to"]}')
             signals.append(create_signal('sbom_version_change', 'MEDIUM', name,
@@ -107,8 +105,7 @@ def main():
                           {'from_version': info['from'], 'to_version': info['to']}))
 
     if suspicious:
-        print(f'
-[SBOM-DIFF] SUSPICIOUS FILES ({len(suspicious)}):')
+        print(f'\n[SBOM-DIFF] SUSPICIOUS FILES ({len(suspicious)}):')
         for f in suspicious:
             print(f'  ! {f["file"]} (pattern: {f["pattern"]})')
             signals.append(create_signal('sbom_suspicious_file', 'HIGH', f['file'],
@@ -119,8 +116,7 @@ def main():
 
     if signals:
         write_signals(signals, signals_path)
-        print(f'
-[SBOM-DIFF] {len(signals)} signal(s) written')
+        print(f'\n[SBOM-DIFF] {len(signals)} signal(s) written')
 
     shutil.copy(args.current_sbom, baseline_path)
     if signals: sys.exit(1)

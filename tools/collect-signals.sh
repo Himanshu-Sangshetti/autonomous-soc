@@ -21,21 +21,34 @@ GRYPE_OUT="${GRYPE_OUTPUT:-/tmp/grype-output.json}"
 if [ -f "$GRYPE_OUT" ]; then
     echo "[COLLECT] Processing Grype..."
     python3 -c "
-import json
-with open('$GRYPE_OUT') as f: data = json.load(f)
-for m in data.get('matches',[]):
-    v = m.get('vulnerability',{})
-    a = m.get('artifact',{})
-    sev = v.get('severity','').upper()
-    if sev in ('HIGH','CRITICAL'):
-        vid = v.get('id','?')
-        pkg = f\"{a.get('name','?')}@{a.get('version','?')}\"
-        fixed = ', '.join(x.get('version','') for x in v.get('fix',{}).get('versions',[]))
-        detail = f'{vid} in {pkg}' + (f' (fix: {fixed})' if fixed else '')
-        print(f'{sev}|{pkg}|{detail}')
+import json, sys
+try:
+    with open('$GRYPE_OUT') as f:
+        data = json.load(f)
+    for m in data.get('matches', []):
+        v = m.get('vulnerability', {}) or {}
+        a = m.get('artifact', {}) or {}
+        sev = (v.get('severity') or '').upper()
+        if sev not in ('HIGH', 'CRITICAL'):
+            continue
+        vid = v.get('id', '?')
+        pkg = '%s@%s' % (a.get('name', '?'), a.get('version', '?'))
+        fix = v.get('fix')
+        versions = []
+        if isinstance(fix, dict):
+            versions = fix.get('versions') or []
+        elif isinstance(fix, list):
+            for x in fix:
+                if isinstance(x, dict) and x.get('version'):
+                    versions.append(x['version'])
+        fixed = ', '.join(str(x) for x in versions) if versions else ''
+        detail = '%s in %s' % (vid, pkg) + (' (fix: %s)' % fixed if fixed else '')
+        print('%s|%s|%s' % (sev, pkg, detail))
+except Exception:
+    sys.exit(0)
 " 2>/dev/null | while IFS='|' read -r sev pkg detail; do
         append_signal "vulnerability" "$sev" "$pkg" "grype" "$detail"
-    done
+    done || true
 fi
 
 # Gitleaks
@@ -53,7 +66,7 @@ for f in (findings or []):
     print(f'{rule}|{desc} in {file}:{line}')
 " 2>/dev/null | while IFS='|' read -r rule detail; do
         append_signal "secret_detected" "HIGH" "$rule" "gitleaks" "$detail"
-    done
+    done || true
 fi
 
 # Provenance
