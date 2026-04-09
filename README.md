@@ -83,7 +83,7 @@ All signals feed into `tools/ai-triage.py` which correlates them and outputs a v
 
 ## AI provider (optional)
 
-LLM triage uses **Anthropic** if `ANTHROPIC_API_KEY` is set; otherwise **Groq** if `GROQ_API_KEY` is set ([Groq console](https://console.groq.com) — free tier for development). If neither is set, the **policy engine** runs (no API cost).
+LLM triage uses **Anthropic** if `ANTHROPIC_API_KEY` is set; otherwise **Groq** if `GROQ_API_KEY` is set ([Groq console](https://console.groq.com), free tier for development). If neither is set, the **policy engine** runs (no API cost).
 
 Override order with `SOC_AI_PROVIDER`: `auto` (default), `anthropic`, or `groq`. Optional: `GROQ_MODEL` (default `llama-3.1-8b-instant`), `ANTHROPIC_MODEL`.
 
@@ -92,6 +92,14 @@ env:
   GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
   # SOC_AI_PROVIDER: groq   # optional if you also set ANTHROPIC_API_KEY
 ```
+
+## Reports and optional remediation
+
+After triage, the action writes **`/tmp/soc-report.md`** and **`/tmp/soc-report.json`** (override with `SOC_REPORT_MD` / `SOC_REPORT_JSON`). On GitHub Actions, the same Markdown is **appended to the job summary** (`GITHUB_STEP_SUMMARY`) so the run page has a shareable overview. The Markdown table caps Grype HIGH/CRITICAL rows (default **75**; set `SOC_REPORT_GRYPE_MAX` to change).
+
+**Optional automated npm fixes:** pass `apply-npm-audit-fix: 'true'` and set `working-directory` to your app folder (e.g. `demo/app`). This runs `npm audit fix --ignore-scripts` after triage (even if the job failed triage), with `continue-on-error`. It only addresses issues npm can fix automatically; large CVE backlogs still need policy, Dependabot/Renovate, and manual review.
+
+The **Autonomous SOC Pipeline** workflow uploads `soc-report.md` and `soc-report.json` as workflow artifacts on every run (`if: always()`).
 
 ## Policy Modes
 

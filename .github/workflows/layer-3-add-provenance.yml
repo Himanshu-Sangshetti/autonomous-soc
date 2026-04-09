@@ -1,3 +1,4 @@
+# Progressive talk demo (3/6): Adds npm audit signatures under demo/app (provenance signal).
 name: "Layer 3: + Provenance Verification"
 on:
   workflow_dispatch:

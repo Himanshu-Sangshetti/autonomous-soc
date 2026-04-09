@@ -1,3 +1,4 @@
+# Progressive talk demo (4/6): Adds Grype scanning the Syft SBOM JSON.
 name: "Layer 4: + Vulnerability Scanning"
 on:
   workflow_dispatch:

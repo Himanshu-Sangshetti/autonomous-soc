@@ -1,3 +1,4 @@
+# Progressive talk demo (2/6): Layer 1 stack plus Syft SBOM and sbom-diff.py (demo/app).
 name: "Layer 2: + SBOM Generation and Diff"
 on:
   workflow_dispatch:

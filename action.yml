@@ -1,5 +1,8 @@
+# Composite GitHub Action: SBOM (Syft), SBOM diff, npm provenance signatures, Grype,
+# Gitleaks, signal collection, AI/policy triage, Markdown+JSON report (and job summary
+# on GitHub). Optional: npm audit fix in a chosen directory (opt-in; review lockfile).
 name: 'Autonomous SOC'
-description: 'Plug-and-play supply chain security: SBOM diff, provenance, runtime monitoring, vulnerability scan, secret scan, AI triage'
+description: 'Supply chain checks: SBOM diff, provenance, vulnerability and secret scan, AI triage, reports'
 author: 'Himanshu Ramchandani'
 
 branding:
@@ -27,6 +30,14 @@ inputs:
     description: 'Skip AI triage, use policy engine only (no API key needed)'
     required: false
     default: 'false'
+  working-directory:
+    description: 'Directory for optional npm audit fix (repository-relative, e.g. demo/app)'
+    required: false
+    default: '.'
+  apply-npm-audit-fix:
+    description: 'If true, run npm audit fix --ignore-scripts in working-directory after triage (opt-in)'
+    required: false
+    default: 'false'
 
 runs:
   using: 'composite'
@@ -36,7 +47,7 @@ runs:
       run: |
         echo ""
         echo "========================================"
-        echo "  AUTONOMOUS SOC — INITIALIZING"
+        echo "  AUTONOMOUS SOC - INITIALIZING"
         echo "========================================"
         echo ""
 
@@ -62,13 +73,13 @@ runs:
         # Install Python dependencies
         pip install anthropic openai pyyaml --quiet 2>/dev/null || pip install anthropic openai pyyaml --quiet --break-system-packages 2>/dev/null
 
-        echo "  ✅ All tools ready"
+        echo "  OK: all tools ready"
 
     - name: Generate SBOM
       shell: bash
       run: |
         echo ""
-        echo "  📋 Generating SBOM..."
+        echo "  Generating SBOM..."
         SBOM_FORMAT="${{ inputs.sbom-format }}"
         if [ "$SBOM_FORMAT" = "spdx" ]; then
           syft packages dir:. -o spdx-json --file=/tmp/soc-sbom-current.json 2>/dev/null
@@ -76,13 +87,13 @@ runs:
           syft packages dir:. -o cyclonedx-json --file=/tmp/soc-sbom-current.json 2>/dev/null
         fi
         COMP_COUNT=$(python3 -c "import json; print(len(json.load(open('/tmp/soc-sbom-current.json')).get('components', [])))" 2>/dev/null || echo "?")
-        echo "  ✅ SBOM generated: ${COMP_COUNT} components"
+        echo "  SBOM generated: ${COMP_COUNT} components"
 
     - name: SBOM Diff
       shell: bash
       run: |
         echo ""
-        echo "  🔍 Running SBOM diff..."
+        echo "  Running SBOM diff..."
         # Initialize signals file
         echo "[]" > /tmp/soc-signals.json
         python3 ${{ github.action_path }}/tools/sbom-diff.py /tmp/soc-sbom-current.json \
@@ -95,12 +106,12 @@ runs:
       shell: bash
       run: |
         echo ""
-        echo "  🔏 Checking package provenance..."
+        echo "  Checking package provenance (npm audit signatures)..."
         npm audit signatures > /tmp/provenance-output.txt 2>&1 || true
         if grep -qi "missing\|invalid\|no signature" /tmp/provenance-output.txt 2>/dev/null; then
-          echo "  ⚠️ Provenance issues detected"
+          echo "  WARN: provenance issues detected"
         else
-          echo "  ✅ All packages have valid provenance"
+          echo "  OK: no provenance issues reported"
         fi
       continue-on-error: true
 
@@ -108,7 +119,7 @@ runs:
       shell: bash
       run: |
         echo ""
-        echo "  🛡️ Scanning for vulnerabilities..."
+        echo "  Scanning for vulnerabilities (Grype)..."
         grype sbom:/tmp/soc-sbom-current.json -o json --file=/tmp/grype-output.json 2>/dev/null || true
         HIGH_COUNT=$(python3 -c "
         import json
@@ -124,7 +135,7 @@ runs:
       shell: bash
       run: |
         echo ""
-        echo "  🔑 Scanning for secrets..."
+        echo "  Scanning for secrets (Gitleaks)..."
         gitleaks detect --source . --no-git --report-format json --report-path /tmp/gitleaks-output.json 2>/dev/null || true
         LEAK_COUNT=$(python3 -c "import json; print(len(json.load(open('/tmp/gitleaks-output.json'))))" 2>/dev/null || echo "0")
         echo "  Found ${LEAK_COUNT} secret(s)"
@@ -153,3 +164,13 @@ runs:
           --policy ${{ inputs.policy }}
       env:
         FAIL_ON_BLOCK: ${{ inputs.fail-on-block }}
+        GRYPE_OUTPUT: /tmp/grype-output.json
+
+    # Opt-in: mutates package-lock.json / node_modules for npm fixes npm can auto-apply.
+    # Review diffs in CI; does not replace full triage for 100+ CVEs (use Dependabot, etc.).
+    - name: Optional npm audit fix
+      if: ${{ always() && inputs.apply-npm-audit-fix == 'true' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: npm audit fix --ignore-scripts
+      continue-on-error: true

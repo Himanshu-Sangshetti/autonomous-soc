@@ -1,3 +1,5 @@
+# Baseline pipeline with no SOC tooling: checkout, Node, npm install (scripts allowed),
+# test. Use for "before" demos versus the protected soc-pipeline workflow.
 name: Naked Pipeline (Zero Protection)
 on:
   workflow_dispatch:

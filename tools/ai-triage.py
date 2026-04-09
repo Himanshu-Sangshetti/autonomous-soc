@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
-"""autonomous-soc: AI Triage Agent
-Correlates signals from all detection layers, determines threat level, recommends action."""
+"""AI triage for Autonomous SOC.
 
-import json, os, sys, argparse
+Reads normalized JSON signals from detection layers (Grype, Gitleaks, sbom-diff, etc.),
+calls an LLM (Anthropic or Groq) when configured, otherwise uses a rule-based policy,
+writes /tmp/soc-verdict.json, emits a text verdict to stdout, and writes SOC_REPORT_*
+files via soc_report (markdown + JSON + optional GitHub job summary).
+"""
+
+import argparse
+import json
+import os
+import sys
+
+from soc_report import write_soc_reports
 from datetime import datetime, timezone
 
 THRESHOLDS = {
@@ -40,7 +50,7 @@ Rules:
 Known patterns: unexpected dep + missing provenance = account takeover (Axios 2026),
 new .pth file = interpreter persistence (LiteLLM), anomalous egress = C2 (TeamPCP)."""
 
-# Groq: free-tier dev keys — https://console.groq.com (OpenAI-compatible API)
+# Groq: https://console.groq.com (OpenAI-compatible API)
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
 
@@ -153,7 +163,7 @@ def ai_triage(signals, policy):
     """Use Anthropic, Groq (free-tier friendly), or policy fallback.
 
     SOC_AI_PROVIDER: auto | anthropic | groq
-      auto — ANTHROPIC_API_KEY if set, else GROQ_API_KEY, else policy engine.
+      auto: use ANTHROPIC_API_KEY if set, else GROQ_API_KEY, else policy engine.
     """
     anthropic_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
     groq_key = (os.environ.get("GROQ_API_KEY") or "").strip()
@@ -189,7 +199,6 @@ def ai_triage(signals, policy):
 
 def print_verdict(result, signals):
     d = result.get("decision", "?")
-    icons = {"AUTO_BLOCK": "\U0001f6d1", "ALERT_HUMAN": "\u26a0\ufe0f", "ALLOW": "\u2705"}
     if result.get("engine") == "ai":
         label = {"anthropic": "Claude", "groq": "Groq"}.get(result.get("llm"), "LLM")
         eng = f"AI ({label})"
@@ -197,28 +206,39 @@ def print_verdict(result, signals):
         eng = "Policy Engine"
 
     print(f"\n{'='*60}")
-    print(f"  AUTONOMOUS SOC — TRIAGE VERDICT")
+    print("  AUTONOMOUS SOC - TRIAGE VERDICT")
     print(f"{'='*60}")
     print(f"\n  Engine: {eng}")
     print(f"  Signals: {len(signals)}")
-    print(f"\n  {icons.get(d,'?')} DECISION: {d} (Confidence: {result.get('confidence','?')})")
-    if result.get("correlation"): print(f"\n  Correlation: {result['correlation']}")
-    if result.get("risk_summary"): print(f"\n  Risk: {result['risk_summary']}")
+    print(f"\n  DECISION: {d} (confidence: {result.get('confidence', '?')})")
+    if result.get("correlation"):
+        print(f"\n  Correlation: {result['correlation']}")
+    if result.get("risk_summary"):
+        print(f"\n  Risk: {result['risk_summary']}")
     ev = result.get("evidence", {})
     if ev:
-        print(f"\n  Evidence:")
-        print(f"    Signals: {ev.get('signal_count', '?')}, Critical: {ev.get('critical_count', 0)}, High: {ev.get('high_severity_count', 0)}")
+        print("\n  Evidence:")
+        print(
+            f"    Signals: {ev.get('signal_count', '?')}, "
+            f"Critical: {ev.get('critical_count', 0)}, High: {ev.get('high_severity_count', 0)}"
+        )
         pkgs = ev.get("packages_involved", [])
-        if pkgs: print(f"    Packages: {', '.join(pkgs)}")
-        if ev.get("attack_pattern"): print(f"    Pattern: {ev['attack_pattern']}")
+        if pkgs:
+            print(f"    Packages: {', '.join(pkgs)}")
+        if ev.get("attack_pattern"):
+            print(f"    Pattern: {ev['attack_pattern']}")
     remed = result.get("remediation", [])
     if remed:
-        print(f"\n  Remediation:")
-        for i, s in enumerate(remed, 1): print(f"    {i}. {s}")
+        print("\n  Remediation (review; optional npm audit fix may apply subset):")
+        for i, s in enumerate(remed, 1):
+            print(f"    {i}. {s}")
     print(f"\n{'='*60}")
-    if d == "AUTO_BLOCK": print(f"\n  \U0001f6d1 BUILD BLOCKED.\n")
-    elif d == "ALERT_HUMAN": print(f"\n  \u26a0\ufe0f Human review required.\n")
-    else: print(f"\n  \u2705 Pipeline clean.\n")
+    if d == "AUTO_BLOCK":
+        print("\n  RESULT: BUILD BLOCKED.\n")
+    elif d == "ALERT_HUMAN":
+        print("\n  RESULT: Human review required.\n")
+    else:
+        print("\n  RESULT: Pipeline clean.\n")
 
 
 def main():
@@ -233,21 +253,22 @@ def main():
     signals = load_signals(sig_path)
 
     print(f"\n{'='*60}")
-    print(f"  AUTONOMOUS SOC — AI TRIAGE AGENT")
+    print("  AUTONOMOUS SOC - AI TRIAGE AGENT")
     print(f"{'='*60}")
     print(f"  Policy: {policy} | Signals: {len(signals)}")
 
     if not signals:
-        print(f"\n  \u2705 No signals. Pipeline clean.\n")
+        print("\n  No signals. Pipeline clean.\n")
+        result = {"decision": "ALLOW", "engine": "none", "confidence": "HIGH"}
         with open(args.output, "w") as f:
-            json.dump({"decision": "ALLOW", "engine": "none"}, f, indent=2)
+            json.dump(result, f, indent=2)
+        write_soc_reports([], result)
         return
 
     for i, s in enumerate(signals, 1):
         sev = s.get("severity", "?")
-        ic = {"CRITICAL": "\U0001f534", "HIGH": "\U0001f534", "MEDIUM": "\U0001f7e1", "LOW": "\U0001f7e2"}.get(sev, "\u26aa")
-        print(f"  {ic} [{sev}] {s.get('source','?')}: {s.get('type','?')}")
-        print(f"     Pkg: {s.get('package','N/A')} | {s.get('detail','')}")
+        print(f"  [{sev}] {s.get('source', '?')}: {s.get('type', '?')}")
+        print(f"       Pkg: {s.get('package', 'N/A')} | {s.get('detail', '')}")
 
     print(f"\n  Triaging {len(signals)} signal(s)...")
     result = ai_triage(signals, policy)
@@ -255,6 +276,8 @@ def main():
 
     with open(args.output, "w") as f:
         json.dump(result, f, indent=2)
+
+    write_soc_reports(signals, result)
 
     fail = os.environ.get("FAIL_ON_BLOCK", "true").lower() == "true"
     if result.get("decision") in ("AUTO_BLOCK", "ALERT_HUMAN") and fail:

@@ -1,3 +1,5 @@
+# Full demo pipeline: Harden-Runner, Node, optional attack scenarios, safe npm install,
+# then the Autonomous SOC composite action. Uploads SOC Markdown/JSON reports as artifacts.
 name: Autonomous SOC Pipeline
 on:
   push:
@@ -20,6 +22,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  actions: write
 
 jobs:
   soc:
@@ -54,6 +57,18 @@ jobs:
         with:
           policy: moderate
           fail-on-block: 'true'
+          working-directory: demo/app
+          apply-npm-audit-fix: 'false'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
+      - name: Upload SOC report artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soc-report-${{ github.run_id }}
+          path: |
+            /tmp/soc-report.md
+            /tmp/soc-report.json
+          if-no-files-found: ignore

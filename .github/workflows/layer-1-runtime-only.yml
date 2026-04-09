@@ -1,3 +1,4 @@
+# Progressive talk demo (1/6): StepSecurity Harden-Runner + checkout + Node + scenario + safe install only.
 name: "Layer 1: Runtime Monitoring Only"
 on:
   workflow_dispatch:

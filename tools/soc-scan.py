@@ -33,7 +33,7 @@ def main():
         print(f"Error: {proj} not a directory"); sys.exit(2)
 
     print(f"\n{'='*60}")
-    print(f"  AUTONOMOUS SOC — LOCAL SCAN")
+    print("  AUTONOMOUS SOC - LOCAL SCAN")
     print(f"{'='*60}")
     print(f"  Target: {proj}")
     print(f"  Policy: {a.policy}")
