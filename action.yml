@@ -3,7 +3,7 @@
 # on GitHub). Optional: npm audit fix in a chosen directory (opt-in; review lockfile).
 name: 'Autonomous SOC'
 description: 'Supply chain checks: SBOM diff, provenance, vulnerability and secret scan, AI triage, reports'
-author: 'Himanshu Ramchandani'
+author: 'Himanshu Sangshetti'
 
 branding:
   icon: 'shield'
