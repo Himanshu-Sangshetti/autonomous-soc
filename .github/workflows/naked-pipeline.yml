@@ -1,8 +1,15 @@
-# Baseline pipeline with no SOC tooling: checkout, Node, npm install (scripts allowed),
-# test. Use for "before" demos versus the protected soc-pipeline workflow.
+# Baseline pipeline with no SOC tooling: checkout, Node, npm install (scripts allowed), test.
+# Use for "before" demo. Run with malicious-dep scenario to show attack succeeds undetected.
 name: Naked Pipeline (Zero Protection)
 on:
   workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'Scenario to demonstrate'
+        required: false
+        default: 'malicious-dep'
+        type: choice
+        options: [clean, malicious-dep, leaked-secret, vuln-dep]
 
 jobs:
   build:
@@ -12,11 +19,33 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Apply scenario
+        if: github.event.inputs.scenario != 'clean'
+        run: |
+          SCENARIO="${{ github.event.inputs.scenario }}"
+          cp "demo/scenarios/${SCENARIO}/package.json" demo/app/package.json 2>/dev/null || true
+          cp "demo/scenarios/${SCENARIO}/.env" demo/app/.env 2>/dev/null || true
+          cp "demo/scenarios/${SCENARIO}/mcp-config.json" demo/app/mcp-config.json 2>/dev/null || true
+          echo "Scenario applied: ${SCENARIO}"
+          echo "--- package.json ---"
+          cat demo/app/package.json
+
       - name: Install dependencies
         working-directory: demo/app
-        run: npm install
+        run: |
+          echo "Installing with scripts ENABLED (postinstall hooks will run)..."
+          npm install
+          echo "Install complete. No security checks. Attack payload executed."
+
       - name: Build
         working-directory: demo/app
         run: npm test
+
       - name: Report
-        run: echo "Build passed. No security checks. No monitoring. No visibility."
+        run: |
+          echo "========================================="
+          echo "  BUILD PASSED."
+          echo "  No security checks. No monitoring."
+          echo "  No visibility. Attack succeeded."
+          echo "========================================="

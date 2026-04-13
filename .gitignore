@@ -9,7 +9,7 @@ node_modules/
 .env.local
 /demo/app/node_modules/
 /demo/app/package-lock.json
-sbom-baseline.json
+# sbom-baseline.json is intentionally tracked — the demo diff needs it
 /tmp/soc-*.json
 __pycache__/
 *.pyc
