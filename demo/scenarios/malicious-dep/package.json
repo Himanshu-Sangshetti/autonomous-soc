@@ -7,6 +7,6 @@
   "dependencies": {
     "express": "^4.21.0",
     "axios": "1.7.7",
-    "plain-crypto-js": "^4.2.0"
+    "plain-crypto-js": "file:../mock-packages/plain-crypto-js"
   }
 }

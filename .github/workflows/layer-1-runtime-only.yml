@@ -34,6 +34,9 @@ jobs:
           cp "demo/scenarios/${SCENARIO}/.env" demo/app/.env 2>/dev/null || true
           cp "demo/scenarios/${SCENARIO}/mcp-config.json" demo/app/mcp-config.json 2>/dev/null || true
 
-      - name: Install (safe)
+      - name: Install (scripts enabled — postinstall hooks will run)
         working-directory: demo/app
-        run: npm install --ignore-scripts
+        run: |
+          echo "Scripts ENABLED: postinstall hooks will execute."
+          echo "Harden-Runner monitors all outbound network connections..."
+          npm install

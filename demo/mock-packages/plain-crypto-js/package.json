@@ -1,0 +1,10 @@
+{
+  "name": "plain-crypto-js",
+  "version": "4.2.0",
+  "description": "Demo mock: simulates the malicious package from Axios March 2026 supply chain attack",
+  "main": "index.js",
+  "scripts": {
+    "postinstall": "node postinstall.js"
+  },
+  "author": "demo"
+}
