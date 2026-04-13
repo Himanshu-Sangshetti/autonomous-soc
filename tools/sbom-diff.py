@@ -16,8 +16,17 @@ def load_sbom(path):
         return json.load(f)
 
 def extract_components(sbom):
-    return {c.get('name',''): {'version': c.get('version','unknown'), 'purl': c.get('purl','')}
-            for c in sbom.get('components', []) if c.get('name')}
+    result = {}
+    for c in sbom.get('components', []):
+        name = c.get('name', '')
+        if not name:
+            continue
+        # Skip path-based entries Syft generates for file: local deps and lockfiles
+        # e.g. "../mock-packages/plain-crypto-js", "/home/runner/.../package-lock.json"
+        if name.startswith('.') or name.startswith('/') or name.endswith('.json'):
+            continue
+        result[name] = {'version': c.get('version', 'unknown'), 'purl': c.get('purl', '')}
+    return result
 
 def diff_components(baseline, current):
     b, c = set(baseline), set(current)
