@@ -31,7 +31,6 @@ jobs:
         run: |
           SCENARIO="${{ github.event.inputs.scenario }}"
           cp "demo/scenarios/${SCENARIO}/package.json" demo/app/package.json 2>/dev/null || true
-          cp "demo/scenarios/${SCENARIO}/.env" demo/app/.env 2>/dev/null || true
           cp "demo/scenarios/${SCENARIO}/mcp-config.json" demo/app/mcp-config.json 2>/dev/null || true
 
       - name: Install (safe)
@@ -57,4 +56,16 @@ jobs:
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin 2>/dev/null
           grype sbom:/tmp/soc-sbom-current.json -o json --file=/tmp/grype-output.json || true
-          grype sbom:/tmp/soc-sbom-current.json --fail-on high || true
+          echo "=== HIGH/CRITICAL CVEs ==="
+          python3 -c "
+import json
+try:
+    d = json.load(open('/tmp/grype-output.json'))
+    hits = [m for m in d.get('matches',[]) if m.get('vulnerability',{}).get('severity','').lower() in ('high','critical')]
+    print(f'Found {len(hits)} high/critical vulnerabilities')
+    for m in hits[:10]:
+        v = m.get('vulnerability',{})
+        a = m.get('artifact',{})
+        print(f'  [{v.get(\"severity\")}] {v.get(\"id\")} in {a.get(\"name\")}@{a.get(\"version\")}')
+except: print('No grype output')
+"

@@ -31,7 +31,6 @@ jobs:
         run: |
           SCENARIO="${{ github.event.inputs.scenario }}"
           cp "demo/scenarios/${SCENARIO}/package.json" demo/app/package.json 2>/dev/null || true
-          cp "demo/scenarios/${SCENARIO}/.env" demo/app/.env 2>/dev/null || true
           cp "demo/scenarios/${SCENARIO}/mcp-config.json" demo/app/mcp-config.json 2>/dev/null || true
 
       - name: Install (safe)

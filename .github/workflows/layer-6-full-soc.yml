@@ -31,7 +31,6 @@ jobs:
         run: |
           SCENARIO="${{ github.event.inputs.scenario }}"
           cp "demo/scenarios/${SCENARIO}/package.json" demo/app/package.json 2>/dev/null || true
-          cp "demo/scenarios/${SCENARIO}/.env" demo/app/.env 2>/dev/null || true
           cp "demo/scenarios/${SCENARIO}/mcp-config.json" demo/app/mcp-config.json 2>/dev/null || true
 
       - name: Install (safe)
@@ -66,7 +65,17 @@ jobs:
           gitleaks detect --source demo/app --no-git --report-format json --report-path /tmp/gitleaks-output.json || true
 
       - name: Collect Signals
-        run: bash tools/collect-signals.sh
+        run: |
+          bash tools/collect-signals.sh
+          echo ""
+          echo "=== SIGNALS COLLECTED ==="
+          python3 -c "
+import json, sys
+sigs = json.load(open('/tmp/soc-signals.json'))
+print(f'Total signals: {len(sigs)}')
+for s in sigs:
+    print(f'  [{s[\"severity\"]}] {s[\"source\"]} -> {s[\"package\"]}: {s[\"detail\"][:80]}')
+"
         env:
           SIGNALS_FILE: /tmp/soc-signals.json
           GRYPE_OUTPUT: /tmp/grype-output.json
